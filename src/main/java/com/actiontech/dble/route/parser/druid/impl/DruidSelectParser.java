@@ -90,7 +90,7 @@ public class DruidSelectParser extends DefaultDruidParser {
                     throw new SQLNonTransientException(msg);
                 }
                 if (!ServerPrivileges.checkPrivilege(sc, schemaInfo.getSchema(), schemaInfo.getTable(), CheckType.SELECT)) {
-                    String msg = "The statement DML privilege check is not passed, sql:" + stmt;
+                    String msg = "The statement DML privilege check is not passed, sql:" + stmt.toString().replaceAll("[\\t\\n\\r]", " ");
                     throw new SQLNonTransientException(msg);
                 }
                 rrs.setSchema(schemaInfo.getSchema());
@@ -144,7 +144,7 @@ public class DruidSelectParser extends DefaultDruidParser {
 
     private SchemaConfig tryRouteToOneNode(SchemaConfig schema, RouteResultset rrs, ServerConnection sc, SQLSelectStatement selectStmt, int tableSize) throws SQLException {
         Set<String> schemaList = new HashSet<>();
-        String dataNode = RouterUtil.tryRouteTablesToOneNode(sc.getUser(), rrs.getStatement(), schema, ctx, schemaList, tableSize);
+        String dataNode = RouterUtil.tryRouteTablesToOneNode(sc.getUser(), rrs, schema, ctx, schemaList, tableSize, true);
         if (dataNode != null) {
             String sql = rrs.getStatement();
             for (String toRemoveSchemaName : schemaList) {
@@ -161,7 +161,7 @@ public class DruidSelectParser extends DefaultDruidParser {
     private boolean canRouteTablesToOneNode(SchemaConfig schema, SQLStatement stmt, RouteResultset rrs,
                                          MySqlSelectQueryBlock mysqlSelectQuery, ServerConnection sc, int tableSize) throws SQLException {
         Set<String> schemaList = new HashSet<>();
-        String dataNode = RouterUtil.tryRouteTablesToOneNode(sc.getUser(), rrs.getStatement(), schema, ctx, schemaList, tableSize);
+        String dataNode = RouterUtil.tryRouteTablesToOneNode(sc.getUser(), rrs, schema, ctx, schemaList, tableSize, true);
         if (dataNode != null) {
             String sql = rrs.getStatement();
             assert schemaList.size() <= 1;

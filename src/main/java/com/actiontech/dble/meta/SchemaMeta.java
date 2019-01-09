@@ -8,6 +8,7 @@ package com.actiontech.dble.meta;
 import com.actiontech.dble.meta.protocol.StructureMeta;
 import com.actiontech.dble.net.mysql.ErrorPacket;
 import com.actiontech.dble.plan.node.QueryNode;
+import com.actiontech.dble.util.StringUtil;
 
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -20,7 +21,7 @@ public class SchemaMeta {
      */
     private final ConcurrentMap<String, StructureMeta.TableMeta> tableMetas;
 
-    private final ConcurrentMap<String, ViewMeta> viewMetas;
+    private volatile ConcurrentMap<String, ViewMeta> viewMetas;
 
     public SchemaMeta() {
         this.tableMetas = new ConcurrentHashMap<>();
@@ -51,6 +52,9 @@ public class SchemaMeta {
      * @return
      */
     public QueryNode getView(String name) {
+        if (name.indexOf("`") != -1) {
+            name = StringUtil.removeBackQuote(name);
+        }
         ViewMeta view = viewMetas.get(name);
         QueryNode queryNode = null;
         if (view != null) {
@@ -71,6 +75,10 @@ public class SchemaMeta {
 
     public ConcurrentMap<String, ViewMeta> getViewMetas() {
         return viewMetas;
+    }
+
+    public void setViewMetas(ConcurrentMap<String, ViewMeta> viewMetas) {
+        this.viewMetas = viewMetas;
     }
 
     public String getViewMetaJson() {

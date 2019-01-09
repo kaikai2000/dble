@@ -40,6 +40,7 @@ import org.slf4j.LoggerFactory;
 import java.nio.ByteBuffer;
 import java.sql.SQLException;
 import java.sql.SQLNonTransientException;
+import java.sql.SQLSyntaxErrorException;
 import java.util.List;
 
 /**
@@ -61,6 +62,12 @@ public final class ExplainHandler {
 
     public static void handle(String stmt, ServerConnection c, int offset) {
         stmt = stmt.substring(offset).trim();
+
+        //try to parse the sql again ,stop the inner command
+        if (checkInnerCommand(stmt)) {
+            c.writeErrMessage(ErrorCode.ER_PARSE_ERROR, "Inner command not route to MySQL:" + stmt);
+            return;
+        }
 
         RouteResultset rrs = getRouteResultset(c, stmt);
         if (rrs == null) {
@@ -129,6 +136,36 @@ public final class ExplainHandler {
         return builder.getBuilder(c.getSession2(), node, true);
     }
 
+    private static boolean checkInnerCommand(String stmt) {
+        int newRes = ServerParse.parse(stmt);
+        int sqlType = newRes & 0xff;
+        switch (sqlType) {
+            case ServerParse.EXPLAIN:
+            case ServerParse.EXPLAIN2:
+            case ServerParse.KILL:
+            case ServerParse.UNLOCK:
+            case ServerParse.LOCK:
+            case ServerParse.CREATE_VIEW:
+            case ServerParse.REPLACE_VIEW:
+            case ServerParse.ALTER_VIEW:
+            case ServerParse.DROP_VIEW:
+            case ServerParse.BEGIN:
+            case ServerParse.USE:
+            case ServerParse.COMMIT:
+            case ServerParse.ROLLBACK:
+            case ServerParse.SET:
+            case ServerParse.MYSQL_COMMENT:
+            case ServerParse.SHOW:
+            case ServerParse.SCRIPT_PREPARE:
+            case ServerParse.MYSQL_CMD_COMMENT:
+            case ServerParse.HELP:
+            case ServerParse.LOAD_DATA_INFILE_SQL:
+                return true;
+            default:
+                return false;
+        }
+    }
+
     private static RowDataPacket getRow(RouteResultsetNode node, String charset) {
         RowDataPacket row = new RowDataPacket(FIELD_COUNT);
         row.add(StringUtil.encode(node.getName(), charset));
@@ -162,6 +199,12 @@ public final class ExplainHandler {
                 LOGGER.info(s.append(c).append(stmt).toString() + " error:" + sqlException);
                 String msg = sqlException.getMessage();
                 c.writeErrMessage(sqlException.getErrorCode(), msg == null ? sqlException.getClass().getSimpleName() : msg);
+                return null;
+            } else if (e instanceof SQLSyntaxErrorException) {
+                StringBuilder s = new StringBuilder();
+                LOGGER.info(s.append(c).append(stmt).toString() + " error:" + e);
+                String msg = "druid parse sql error:" + e.getMessage();
+                c.writeErrMessage(ErrorCode.ER_PARSE_ERROR, msg);
                 return null;
             } else {
                 StringBuilder s = new StringBuilder();

@@ -6,6 +6,8 @@
 package com.actiontech.dble.meta;
 
 import com.actiontech.dble.DbleServer;
+import com.actiontech.dble.route.parser.util.ParseUtil;
+import com.actiontech.dble.util.StringUtil;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -33,6 +35,13 @@ public class ViewMetaParser {
         if (DbleServer.getInstance().getSystemVariables().isLowerCaseTableNames()) {
             viewName = viewName.toLowerCase();
         }
+
+        //delete the schema if exists
+        if (viewName.indexOf('.') != -1) {
+            viewName = viewName.split("\\.")[1];
+        }
+        viewName = StringUtil.removeBackQuote(viewName);
+
         //get the name of view
         viewMeta.setViewName(viewName);
         //get the list of column name
@@ -51,6 +60,10 @@ public class ViewMetaParser {
                 case '\r':
                 case '\n':
                     continue;
+                case '/':
+                    offset = ParseUtil.comment(originalSql, offset);
+                    offset++;
+                    break;
                 case 'a':
                     offset = offset + 5;
                     type = TYPE_ALTER_VIEW;
