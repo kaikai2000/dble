@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2016-2018 ActionTech.
+ * Copyright (C) 2016-2019 ActionTech.
  * License: http://www.gnu.org/licenses/gpl.html GPL version 2 or higher.
  */
 
@@ -463,6 +463,9 @@ public class ServerSchemaStatVisitor extends MySqlSchemaStatVisitor {
             String tableName;
             if (owner instanceof SQLPropertyExpr) {
                 tableName = ((SQLPropertyExpr) owner).getName();
+                if (((SQLPropertyExpr) owner).getOwner() instanceof SQLIdentifierExpr) {
+                    tableName = ((SQLIdentifierExpr) ((SQLPropertyExpr) owner).getOwner()).getName() + "." + tableName;
+                }
             } else {
                 tableName = ((SQLIdentifierExpr) owner).getName();
             }
@@ -470,7 +473,6 @@ public class ServerSchemaStatVisitor extends MySqlSchemaStatVisitor {
             if (aliasMap.containsKey(table)) {
                 table = aliasMap.get(table);
             }
-
             return new Column(table, column);
         }
 

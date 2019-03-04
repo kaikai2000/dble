@@ -1,5 +1,5 @@
 /*
-* Copyright (C) 2016-2018 ActionTech.
+* Copyright (C) 2016-2019 ActionTech.
 * based on code by MyCATCopyrightHolder Copyright (c) 2013, OpenCloudDB/MyCAT.
 * License: http://www.gnu.org/licenses/gpl.html GPL version 2 or higher.
 */
@@ -135,16 +135,19 @@ public final class ShowHelp {
         HELPS.put("show @@backend.old", "Report old connections witch still alive after reload config all");
         HELPS.put("show @@binlog.status", "Report the current GTID of all backend nodes");
         HELPS.put("show @@help", "Report usage of manager port");
+        HELPS.put("show @@processlist", "Report correspondence between front and backend session");
 
         HELPS.put("show @@cost_time", "Report cost time of query , contains back End ,front End and over all");
         HELPS.put("show @@thread_used", "Report usage of threads, for optimize performance ");
         HELPS.put("show @@dataNodes where schema=? and table=?", "Report the data nodes info of a table");
         HELPS.put("show @@algorithm where schema=? and table=?", "Report the algorithm info of a table");
+        HELPS.put("show @@ddl", "Report all ddl info in progress");
         // switch
         HELPS.put("switch @@datasource name:index", "Switch dataSource");
 
         // kill
         HELPS.put("kill @@connection id1,id2,...", "Kill the specified connections");
+        HELPS.put("kill @@ddl_lock where schema=? and table=?", "Kill ddl lock held by the specified ddl");
 
         // stop
         HELPS.put("stop @@heartbeat name:time", "Pause dataNode heartbeat");
@@ -152,7 +155,7 @@ public final class ShowHelp {
         // reload
         HELPS.put("reload @@config", "Reload basic config from file");
         HELPS.put("reload @@config_all", "Reload all config from file");
-        HELPS.put("reload @@metadata", "Reload metadata of tables");
+        HELPS.put("reload @@metadata [where schema=? [and table=?] | where table in ('schema1'.'table1',...)]", "Reload metadata of tables or specified table");
         HELPS.put("reload @@sqlslow=", "Set Slow SQL Time(ms)");
         HELPS.put("reload @@user_stat", "Reset show @@sql  @@sql.sum @@sql.slow");
         HELPS.put("reload @@query_cf[=table&column]", "Reset show @@sql.conditiont");

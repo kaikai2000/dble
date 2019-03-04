@@ -1,3 +1,8 @@
+/*
+ * Copyright (C) 2016-2019 ActionTech.
+ * License: http://www.gnu.org/licenses/gpl.html GPL version 2 or higher.
+ */
+
 package com.actiontech.dble.config.loader.ucoreprocess.loader;
 
 import com.actiontech.dble.cluster.ClusterParamCfg;
@@ -68,6 +73,8 @@ public class UXmlRuleLoader implements UcoreXmlLoader {
         List<TableRule> tableRules = parseJsonTableRuleService.parseJsonToBean(jsonObj.getJSONArray(UcorePathUtil.TABLE_RULE).toJSONString());
         rule.setTableRule(tableRules);
 
+        rule.setVersion(jsonObj.getString(UcorePathUtil.VERSION));
+
         String path = ResourceUtil.getResourcePathFromRoot(UcorePathUtil.UCORE_LOCAL_WRITE_PATH);
         path = new File(path).getPath() + File.separator;
         path += WRITEPATH;
@@ -87,6 +94,7 @@ public class UXmlRuleLoader implements UcoreXmlLoader {
         JSONObject rule = new JSONObject();
 
         readMapFileAddFunction(rules.getFunction());
+        rule.put(UcorePathUtil.VERSION, rules.getVersion());
         rule.put(UcorePathUtil.TABLE_RULE, rules.getTableRule());
         rule.put(UcorePathUtil.FUNCTION, rules.getFunction());
         ClusterUcoreSender.sendDataToUcore(CONFIG_PATH, rule.toJSONString());

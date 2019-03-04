@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2016-2018 ActionTech.
+ * Copyright (C) 2016-2019 ActionTech.
  * License: http://www.gnu.org/licenses/gpl.html GPL version 2 or higher.
  */
 
@@ -71,6 +71,7 @@ public class TableNode extends PlanNode {
             }
             this.setNoshardNode(new HashSet<>(tableConfig.getDataNodes()));
         }
+        this.keepFieldSchema = true;
     }
 
     /**
@@ -92,7 +93,7 @@ public class TableNode extends PlanNode {
         innerFields.clear();
         String tmpTable = alias == null ? tableName : alias;
         for (StructureMeta.ColumnMeta cm : tableMeta.getColumnsList()) {
-            NamedField tmpField = new NamedField(tmpTable, cm.getName(), this);
+            NamedField tmpField = new NamedField(schema, tmpTable, cm.getName(), this);
             innerFields.put(tmpField, tmpField);
         }
     }
@@ -130,6 +131,11 @@ public class TableNode extends PlanNode {
     @Override
     public String getPureName() {
         return this.getTableName();
+    }
+
+    @Override
+    public String getPureSchema() {
+        return this.getSchema();
     }
 
     public String getSchema() {

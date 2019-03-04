@@ -1,3 +1,8 @@
+/*
+ * Copyright (C) 2016-2019 ActionTech.
+ * License: http://www.gnu.org/licenses/gpl.html GPL version 2 or higher.
+ */
+
 package com.actiontech.dble.config.loader.ucoreprocess;
 
 import java.util.HashMap;
@@ -13,7 +18,7 @@ public final class UDistrbtLockManager {
     private static final UDistrbtLockManager INSTANCE = new UDistrbtLockManager();
 
     private UDistrbtLockManager() {
-        this.lockTables = new HashMap<String, UDistributeLock>();
+        this.lockTables = new HashMap<>();
     }
 
     public static void addLock(UDistributeLock lock) {
@@ -21,6 +26,9 @@ public final class UDistrbtLockManager {
     }
 
     public static void releaseLock(String path) {
-        INSTANCE.lockTables.get(path).release();
+        UDistributeLock removedLock = INSTANCE.lockTables.remove(path);
+        if (removedLock != null) {
+            removedLock.release();
+        }
     }
 }

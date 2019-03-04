@@ -1,5 +1,5 @@
 /*
-* Copyright (C) 2016-2018 ActionTech.
+* Copyright (C) 2016-2019 ActionTech.
 * based on code by MyCATCopyrightHolder Copyright (c) 2013, OpenCloudDB/MyCAT.
 * License: http://www.gnu.org/licenses/gpl.html GPL version 2 or higher.
 */
@@ -22,6 +22,7 @@ import com.actiontech.dble.backend.mysql.nio.handler.transaction.xa.XACommitNode
 import com.actiontech.dble.backend.mysql.nio.handler.transaction.xa.XARollbackNodesHandler;
 import com.actiontech.dble.backend.mysql.store.memalloc.MemSizeController;
 import com.actiontech.dble.backend.mysql.xa.TxState;
+import com.actiontech.dble.btrace.provider.ComplexQueryProvider;
 import com.actiontech.dble.btrace.provider.CostTimeProvider;
 import com.actiontech.dble.config.ErrorCode;
 import com.actiontech.dble.config.ServerConfig;
@@ -95,6 +96,7 @@ public class NonBlockingSession implements Session {
     private MemSizeController otherBufferMC;
     private QueryTimeCost queryTimeCost;
     private CostTimeProvider provider;
+    private ComplexQueryProvider xprovider;
     private volatile boolean timeCost = false;
     private AtomicBoolean firstBackConRes = new AtomicBoolean(false);
 
@@ -143,6 +145,7 @@ public class NonBlockingSession implements Session {
         }
         queryTimeCost = new QueryTimeCost();
         provider = new CostTimeProvider();
+        xprovider = new ComplexQueryProvider();
         provider.beginRequest(source.getId());
         if (requestTime == 0) {
             requestTime = System.nanoTime();
@@ -184,6 +187,20 @@ public class NonBlockingSession implements Session {
         }
         provider.endRoute(source.getId());
         queryTimeCost.setCount(rrs.getNodes() == null ? 0 : rrs.getNodes().length);
+    }
+
+    public void endComplexRoute() {
+        if (!timeCost) {
+            return;
+        }
+        xprovider.endRoute(source.getId());
+    }
+
+    public void endComplexExecute() {
+        if (!timeCost) {
+            return;
+        }
+        xprovider.endComplexExecute(source.getId());
     }
 
     public void readyToDeliver() {
@@ -302,6 +319,13 @@ public class NonBlockingSession implements Session {
             Map<MySQLConnection, TraceRecord> connMap = new ConcurrentHashMap<>();
             connMap.put(conn, record);
             traceResult.addToConnFinishedMap(responseHandler, connMap);
+        }
+
+        if (!timeCost) {
+            return;
+        }
+        if (queryTimeCost.getFirstBackConEof().compareAndSet(false, true)) {
+            xprovider.firstComplexEof(source.getId());
         }
     }
 
@@ -422,7 +446,7 @@ public class NonBlockingSession implements Session {
             try {
                 singleNodeHandler.execute();
             } catch (Exception e) {
-                handleSpecial(rrs, source.getSchema(), false);
+                handleSpecial(rrs, false);
                 LOGGER.info(String.valueOf(source) + rrs, e);
                 source.writeErrMessage(ErrorCode.ERR_HANDLE_DATA, e.getMessage() == null ? e.toString() : e.getMessage());
             }
@@ -733,22 +757,24 @@ public class NonBlockingSession implements Session {
 
     public void releaseConnection(RouteResultsetNode rrn, boolean debug, final boolean needClose) {
 
-        BackendConnection c = target.remove(rrn);
-        if (c != null) {
-            if (debug) {
-                LOGGER.debug("release connection " + c);
-            }
-            if (c.getAttachment() != null) {
-                c.setAttachment(null);
-            }
-            if (!c.isClosedOrQuit()) {
-                if (c.isAutocommit()) {
-                    c.release();
-                } else if (needClose) {
-                    //c.rollback();
-                    c.close("the  need to be closed");
-                } else {
-                    c.release();
+        if (rrn != null) {
+            BackendConnection c = target.remove(rrn);
+            if (c != null) {
+                if (debug) {
+                    LOGGER.debug("release connection " + c);
+                }
+                if (c.getAttachment() != null) {
+                    c.setAttachment(null);
+                }
+                if (!c.isClosedOrQuit()) {
+                    if (c.isAutocommit()) {
+                        c.release();
+                    } else if (needClose) {
+                        //c.rollback();
+                        c.close("the  need to be closed");
+                    } else {
+                        c.release();
+                    }
                 }
             }
         }
@@ -876,7 +902,7 @@ public class NonBlockingSession implements Session {
     public void clearResources(RouteResultset rrs) {
         clearResources(true);
         if (rrs.getSqlType() == DDL) {
-            this.handleSpecial(rrs, this.getSource().getSchema(), false);
+            this.handleSpecial(rrs, false);
         }
     }
 
@@ -944,9 +970,9 @@ public class NonBlockingSession implements Session {
         return errConn;
     }
 
-    public boolean handleSpecial(RouteResultset rrs, String schema, boolean isSuccess) {
+    public boolean handleSpecial(RouteResultset rrs, boolean isSuccess) {
         if (rrs.getSchema() != null) {
-            return handleSpecial(rrs, schema, isSuccess, null);
+            return handleSpecial(rrs, isSuccess, null);
         } else {
             if (rrs.getSqlType() == ServerParse.DDL) {
                 LOGGER.info("Hint ddl do not update the meta");
@@ -955,7 +981,7 @@ public class NonBlockingSession implements Session {
         }
     }
 
-    public boolean handleSpecial(RouteResultset rrs, String schema, boolean isSuccess, String errInfo) {
+    public boolean handleSpecial(RouteResultset rrs, boolean isSuccess, String errInfo) {
         if (rrs.getSqlType() == ServerParse.DDL && rrs.getSchema() != null) {
             String sql = rrs.getSrcStatement();
             if (source.isTxStart()) {
@@ -964,9 +990,9 @@ public class NonBlockingSession implements Session {
             }
             if (!isSuccess) {
                 LOGGER.warn("DDL execute failed or Session closed," +
-                        "Schema[" + schema + "],SQL[" + sql + "]" + (errInfo != null ? "errorInfo:" + errInfo : ""));
+                        "Schema[" + rrs.getSchema() + "],SQL[" + sql + "]" + (errInfo != null ? "errorInfo:" + errInfo : ""));
             }
-            return DbleServer.getInstance().getTmManager().updateMetaData(schema, sql, isSuccess, true);
+            return DbleServer.getInstance().getTmManager().updateMetaData(rrs.getSchema(), rrs.getTable(), sql, isSuccess, true, rrs.getDdlType());
         }
         return true;
     }

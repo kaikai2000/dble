@@ -1,3 +1,8 @@
+/*
+ * Copyright (C) 2016-2019 ActionTech.
+ * License: http://www.gnu.org/licenses/gpl.html GPL version 2 or higher.
+ */
+
 package com.actiontech.dble.config.loader.ucoreprocess.loader;
 
 import com.actiontech.dble.DbleServer;
@@ -69,7 +74,7 @@ public class UDdlChildResponse implements UcoreXmlLoader {
                 ClusterDelayProvider.delayBeforeUpdateMeta();
                 //to judge the table is be drop
                 if (ddlInfo.getType() == DDLInfo.DDLType.DROP_TABLE) {
-                    DbleServer.getInstance().getTmManager().updateMetaData(ddlInfo.getSchema(), ddlInfo.getSql(), DDLInfo.DDLStatus.SUCCESS.equals(ddlInfo.getStatus()), false);
+                    DbleServer.getInstance().getTmManager().updateMetaData(schema, table, ddlInfo.getSql(), DDLInfo.DDLStatus.SUCCESS.equals(ddlInfo.getStatus()), false, DDLInfo.DDLType.DROP_TABLE);
                 } else {
                     //else get the lastest table meta from db
                     DbleServer.getInstance().getTmManager().updateOnetableWithBackData(DbleServer.getInstance().getConfig(), schema, table);

@@ -1,3 +1,8 @@
+/*
+ * Copyright (C) 2016-2019 ActionTech.
+ * License: http://www.gnu.org/licenses/gpl.html GPL version 2 or higher.
+ */
+
 package com.actiontech.dble.config.loader.ucoreprocess.loader;
 
 import com.actiontech.dble.cluster.ClusterParamCfg;
@@ -60,6 +65,7 @@ public class UXmlServerLoader implements UcoreXmlLoader {
         if (jsonObj.get(UcorePathUtil.FIREWALL) != null) {
             server.setFirewall(parseJsonFireWall.parseJsonToBean(jsonObj.getJSONObject(UcorePathUtil.FIREWALL).toJSONString()));
         }
+        server.setVersion(jsonObj.getString(UcorePathUtil.VERSION));
         server.setSystem(parseJsonSystem.parseJsonToBean(jsonObj.getJSONObject(UcorePathUtil.DEFAULT).toJSONString()));
         server.setUser(parseJsonUser.parseJsonToBean(jsonObj.getJSONArray(UcorePathUtil.USER).toJSONString()));
         String path = ResourceUtil.getResourcePathFromRoot(UcorePathUtil.UCORE_LOCAL_WRITE_PATH);
@@ -72,6 +78,7 @@ public class UXmlServerLoader implements UcoreXmlLoader {
     public void notifyCluster() throws Exception {
         Server servers = this.parseServerXMl.parseXmlToBean(UcorePathUtil.UCORE_LOCAL_WRITE_PATH + WRITEPATH);
         JSONObject server = new JSONObject();
+        server.put(UcorePathUtil.VERSION, servers.getVersion());
         server.put(UcorePathUtil.DEFAULT, servers.getSystem());
         server.put(UcorePathUtil.FIREWALL, servers.getFirewall());
         server.put(UcorePathUtil.USER, servers.getUser());

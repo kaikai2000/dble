@@ -1,5 +1,5 @@
 /*
-* Copyright (C) 2016-2018 ActionTech.
+* Copyright (C) 2016-2019 ActionTech.
 * based on code by MyCATCopyrightHolder Copyright (c) 2013, OpenCloudDB/MyCAT.
 * License: http://www.gnu.org/licenses/gpl.html GPL version 2 or higher.
 */
@@ -69,20 +69,32 @@ public class SingleNodeHandler implements ResponseHandler, LoadDataResponseHandl
 
 
     public void execute() throws Exception {
-        ServerConnection sc = session.getSource();
         connClosed = false;
         this.packetId = (byte) session.getPacketId().get();
-        final BackendConnection conn = session.getTarget(node);
-        node.setRunOnSlave(rrs.getRunOnSlave());
-        if (session.tryExistsCon(conn, node)) {
-            execute(conn);
-        } else {
-            // create new connection
+        if (session.getTargetCount() > 0) {
+            BackendConnection conn = session.getTarget(node);
+            if (conn == null && rrs.isGlobalTable() && rrs.getGlobalBackupNodes() != null) {
+                for (String dataNode : rrs.getGlobalBackupNodes()) {
+                    RouteResultsetNode tmpNode = new RouteResultsetNode(dataNode, rrs.getSqlType(), rrs.getStatement());
+                    conn = session.getTarget(tmpNode);
+                    if (conn != null) {
+                        break;
+                    }
+                }
+            }
             node.setRunOnSlave(rrs.getRunOnSlave());
-            ServerConfig conf = DbleServer.getInstance().getConfig();
-            PhysicalDBNode dn = conf.getDataNodes().get(node.getName());
-            dn.getConnection(dn.getDatabase(), session.getSource().isTxStart(), sc.isAutocommit(), node, this, node);
+            if (session.tryExistsCon(conn, node)) {
+                execute(conn);
+                return;
+            }
         }
+
+        // create new connection
+        node.setRunOnSlave(rrs.getRunOnSlave());
+        ServerConfig conf = DbleServer.getInstance().getConfig();
+        PhysicalDBNode dn = conf.getDataNodes().get(node.getName());
+        dn.getConnection(dn.getDatabase(), session.getSource().isTxStart(), session.getSource().isAutocommit(), node, this, node);
+
 
     }
 
@@ -145,7 +157,7 @@ public class SingleNodeHandler implements ResponseHandler, LoadDataResponseHandl
             ((MySQLConnection) conn).quit();
         }
         source.setTxInterrupt(errMsg);
-        session.handleSpecial(rrs, session.getSource().getSchema(), false);
+        session.handleSpecial(rrs, false);
 
 
         if (buffer != null) {
@@ -173,7 +185,7 @@ public class SingleNodeHandler implements ResponseHandler, LoadDataResponseHandl
         if (executeResponse) {
             this.resultSize += data.length;
             //handleSpecial
-            boolean metaInited = session.handleSpecial(rrs, session.getSource().getSchema(), true);
+            boolean metaInited = session.handleSpecial(rrs, true);
             if (!metaInited) {
                 executeMetaDataFailed(conn);
                 return;

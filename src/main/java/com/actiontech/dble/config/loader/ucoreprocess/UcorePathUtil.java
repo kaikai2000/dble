@@ -1,3 +1,8 @@
+/*
+ * Copyright (C) 2016-2019 ActionTech.
+ * License: http://www.gnu.org/licenses/gpl.html GPL version 2 or higher.
+ */
+
 package com.actiontech.dble.config.loader.ucoreprocess;
 
 import com.actiontech.dble.cluster.ClusterParamCfg;
@@ -31,6 +36,8 @@ public final class UcorePathUtil {
         return CONF_BASE_PATH + SCHEMA;
     }
 
+
+    public static final String VERSION = "version";
 
     //depth:4,child node of conf_base_path/rules/
     public static final String TABLE_RULE = "tableRule";

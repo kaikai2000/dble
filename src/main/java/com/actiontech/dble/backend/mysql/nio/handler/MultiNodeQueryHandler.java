@@ -1,5 +1,5 @@
 /*
-* Copyright (C) 2016-2018 ActionTech.
+* Copyright (C) 2016-2019 ActionTech.
 * based on code by MyCATCopyrightHolder Copyright (c) 2013, OpenCloudDB/MyCAT.
 * License: http://www.gnu.org/licenses/gpl.html GPL version 2 or higher.
 */
@@ -43,7 +43,6 @@ import java.util.Set;
 public class MultiNodeQueryHandler extends MultiNodeHandler implements LoadDataResponseHandler {
     private static final Logger LOGGER = LoggerFactory.getLogger(MultiNodeQueryHandler.class);
     protected final RouteResultset rrs;
-    protected final NonBlockingSession session;
     private final boolean sessionAutocommit;
     private long affectedRows;
     long selectRows;
@@ -74,7 +73,6 @@ public class MultiNodeQueryHandler extends MultiNodeHandler implements LoadDataR
             byteBuffer = session.getSource().allocate();
         }
         this.sessionAutocommit = session.getSource().isAutocommit();
-        this.session = session;
     }
 
     protected void reset(int initCount) {
@@ -188,7 +186,7 @@ public class MultiNodeQueryHandler extends MultiNodeHandler implements LoadDataR
                 return;
             }
             if (--nodeCount == 0) {
-                session.handleSpecial(rrs, session.getSource().getSchema(), false, getDDLErrorInfo());
+                session.handleSpecial(rrs, false, getDDLErrorInfo());
 
                 if (byteBuffer == null) {
                     errPacket.setPacketId(1);
@@ -232,12 +230,12 @@ public class MultiNodeQueryHandler extends MultiNodeHandler implements LoadDataR
                 if (--nodeCount > 0)
                     return;
                 if (isFail()) {
-                    session.handleSpecial(rrs, source.getSchema(), false);
+                    session.handleSpecial(rrs, false);
                     session.resetMultiStatementStatus();
                     handleEndPacket(err.toBytes(), AutoTxOperation.ROLLBACK, conn, false);
                     return;
                 }
-                boolean metaInited = session.handleSpecial(rrs, source.getSchema(), true);
+                boolean metaInited = session.handleSpecial(rrs, true);
                 if (!metaInited) {
                     executeMetaDataFailed(conn);
                     return;
@@ -455,7 +453,7 @@ public class MultiNodeQueryHandler extends MultiNodeHandler implements LoadDataR
             }
             errConnection.add(conn);
             if (--nodeCount == 0) {
-                session.handleSpecial(rrs, session.getSource().getSchema(), false);
+                session.handleSpecial(rrs, false);
                 if (byteBuffer == null) {
                     handleEndPacket(err.toBytes(), AutoTxOperation.ROLLBACK, conn, false);
                 } else {

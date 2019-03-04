@@ -1,5 +1,5 @@
 /*
-* Copyright (C) 2016-2018 ActionTech.
+* Copyright (C) 2016-2019 ActionTech.
 * based on code by MyCATCopyrightHolder Copyright (c) 2013, OpenCloudDB/MyCAT.
 * License: http://www.gnu.org/licenses/gpl.html GPL version 2 or higher.
 */
@@ -214,7 +214,9 @@ public abstract class PhysicalDatasource {
         long length = linkedQueue.size();
         for (int i = 0; i < length; i++) {
             BackendConnection con = linkedQueue.poll();
-            if (con.isClosedOrQuit()) {
+            if (con == null) {
+                break;
+            } else if (con.isClosedOrQuit()) {
                 continue;
             } else if (con.getLastTime() < hearBeatTime) { //if the connection is idle for a long time
                 con.setBorrowed(true);
@@ -254,9 +256,11 @@ public abstract class PhysicalDatasource {
             }
             NewConnectionRespHandler simpleHandler = new NewConnectionRespHandler();
             try {
-                // creat new connection
-                this.createNewConnection(simpleHandler, null, schemas[i % schemas.length]);
-                simpleHandler.getBackConn().release();
+                if (this.createNewCount()) {
+                    // creat new connection
+                    this.createNewConnection(simpleHandler, null, schemas[i % schemas.length]);
+                    simpleHandler.getBackConn().release();
+                }
                 if (ToResolveContainer.CREATE_CONN_FAIL.contains(this.getHostConfig().getName() + "-" + this.getConfig().getHostName())) {
                     Map<String, String> labels = AlertUtil.genSingleLabel("data_host", this.getHostConfig().getName() + "-" + this.getConfig().getHostName());
                     if (AlertUtil.alertResolve(AlarmCode.CREATE_CONN_FAIL, Alert.AlertLevel.WARN, "mysql", this.getConfig().getId(), labels)) {

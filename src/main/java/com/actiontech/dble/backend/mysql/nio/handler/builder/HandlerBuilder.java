@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2016-2018 ActionTech.
+ * Copyright (C) 2016-2019 ActionTech.
  * License: http://www.gnu.org/licenses/gpl.html GPL version 2 or higher.
  */
 
@@ -39,6 +39,10 @@ public class HandlerBuilder {
         }
     }
 
+    synchronized void removeRrs(RouteResultsetNode rrsNode) {
+        rrsNodes.remove(rrsNode);
+    }
+
     /**
      * start all leaf handler of children of special handler
      */
@@ -69,7 +73,9 @@ public class HandlerBuilder {
                 bshandler.getRrss().setRunOnSlave(this.session.getComplexRrs().getRunOnSlave());
             }
         }
+        session.endComplexRoute();
         HandlerBuilder.startHandler(fh);
+        session.endComplexExecute();
         long endTime = System.nanoTime();
         logger.debug("HandlerBuilder.build cost:" + (endTime - startTime));
         return builder;

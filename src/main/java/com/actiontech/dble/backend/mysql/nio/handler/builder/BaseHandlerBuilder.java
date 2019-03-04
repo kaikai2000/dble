@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2016-2018 ActionTech.
+ * Copyright (C) 2016-2019 ActionTech.
  * License: http://www.gnu.org/licenses/gpl.html GPL version 2 or higher.
  */
 
@@ -165,8 +165,27 @@ public abstract class BaseHandlerBuilder {
         GlobalVisitor visitor = new GlobalVisitor(node, true);
         visitor.visit();
         String sql = visitor.getSql().toString();
-        RouteResultsetNode[] rrss = getTableSources(node.getNoshardNode(), sql);
+        String randomDataNode = getRandomNode(node.getNoshardNode());
+        RouteResultsetNode rrsNode = new RouteResultsetNode(randomDataNode, ServerParse.SELECT, sql);
+        RouteResultsetNode[] rrss = new RouteResultsetNode[]{rrsNode};
         hBuilder.checkRRSs(rrss);
+        if (session.getTargetCount() > 0 && session.getTarget(rrss[0]) == null) {
+            for (String dataNode : node.getNoshardNode()) {
+                if (!dataNode.equals(randomDataNode)) {
+                    RouteResultsetNode tmpRrsNode = new RouteResultsetNode(dataNode, ServerParse.SELECT, sql);
+                    RouteResultsetNode[] tmpRrss = new RouteResultsetNode[]{tmpRrsNode};
+                    hBuilder.checkRRSs(tmpRrss);
+                    if (session.getTarget(tmpRrsNode) != null) {
+                        rrss = tmpRrss;
+                        hBuilder.removeRrs(rrsNode);
+                        break;
+                    } else {
+                        hBuilder.removeRrs(tmpRrsNode);
+                    }
+                }
+            }
+        }
+
         MultiNodeMergeHandler mh = new MultiNodeMergeHandler(getSequenceId(), rrss, session.getSource().isAutocommit() && !session.getSource().isTxStart(),
                 session, null);
         addHandler(mh);
@@ -397,7 +416,7 @@ public abstract class BaseHandlerBuilder {
         addHandler(mh);
     }
 
-    protected RouteResultsetNode[] getTableSources(Set<String> dataNodes, String sql) {
+    protected String getRandomNode(Set<String> dataNodes) {
         String randomDatenode = null;
         int index = (int) (System.currentTimeMillis() % dataNodes.size());
         int i = 0;
@@ -408,8 +427,7 @@ public abstract class BaseHandlerBuilder {
             }
             i++;
         }
-        RouteResultsetNode rrss = new RouteResultsetNode(randomDatenode, ServerParse.SELECT, sql);
-        return new RouteResultsetNode[]{rrss};
+        return randomDatenode;
     }
 
     protected TableConfig getTableConfig(String schema, String table) {
@@ -473,7 +491,7 @@ public abstract class BaseHandlerBuilder {
     }
 
     private void handleSubQueryForExplain(final ReentrantLock lock, final Condition finishSubQuery, final AtomicBoolean finished,
-                                final AtomicInteger subNodes, final PlanNode planNode, final SubQueryHandler tempHandler) {
+                                          final AtomicInteger subNodes, final PlanNode planNode, final SubQueryHandler tempHandler) {
         tempHandler.setForExplain();
         BaseHandlerBuilder builder = hBuilder.getBuilder(session, planNode, true);
         DMLResponseHandler endHandler = builder.getEndHandler();
@@ -486,6 +504,7 @@ public abstract class BaseHandlerBuilder {
         DbleServer.getInstance().getComplexQueryExecutor().execute(new Runnable() {
             @Override
             public void run() {
+                boolean startHandler = false;
                 try {
                     BaseHandlerBuilder builder = hBuilder.getBuilder(session, planNode, false);
                     DMLResponseHandler endHandler = builder.getEndHandler();
@@ -501,6 +520,7 @@ public abstract class BaseHandlerBuilder {
                         }
                     };
                     tempHandler.setTempDoneCallBack(tempDone);
+                    startHandler = true;
                     HandlerBuilder.startHandler(endHandler);
                 } catch (Exception e) {
                     LOGGER.info("execute ItemScalarSubQuery error", e);
@@ -509,6 +529,9 @@ public abstract class BaseHandlerBuilder {
                     String errorMsg = e.getMessage() == null ? e.toString() : e.getMessage();
                     errorPackage.setMessage(errorMsg.getBytes(StandardCharsets.UTF_8));
                     errorPackets.add(errorPackage);
+                    if (!startHandler) {
+                        subQueryFinished(subNodes, lock, finished, finishSubQuery);
+                    }
                 }
             }
         });

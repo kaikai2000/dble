@@ -1,3 +1,8 @@
+<!--
+  ~ Copyright (C) 2016-2019 ActionTech.
+  ~ License: http://www.gnu.org/licenses/gpl.html GPL version 2 or higher.
+  -->
+
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
 
@@ -10,6 +15,7 @@
     <description>The project of dble-server</description>
 
     <properties>
+        <java.version>1.8</java.version>
         <app.encoding>UTF-8</app.encoding>
         <version.template.file>version.txt.template</version.template.file>
         <version.file>version.txt</version.file>
@@ -356,8 +362,8 @@
                     <forceJavacCompilerUse>true</forceJavacCompilerUse>
                     <!-- maven-compiler-plugin defaults to targeting Java 5, but our javac
                         only supports >=6 -->
-                    <source>1.7</source>
-                    <target>1.7</target>
+                    <source>${java.version}</source>
+                    <target>${java.version}</target>
                     <encoding>${app.encoding}</encoding>
                 </configuration>
                 <dependencies>
@@ -432,6 +438,10 @@
                                 <replacement>
                                     <token>@server-version@</token>
                                     <value>5.6.29-dble-${project.version}-${git.commit.id}-${timestamp}</value>
+                                </replacement>
+                                <replacement>
+                                    <token>@config_version@</token>
+                                    <value>${project.version}</value>
                                 </replacement>
                                 <replacement>
                                     <token>@version-comment@</token>
@@ -553,6 +563,11 @@
                                     <extraArgument>-Xmx4G</extraArgument>
                                     <extraArgument>-Xms1G</extraArgument>
                                     <extraArgument>-XX:MaxDirectMemorySize=2G</extraArgument>
+                                    <extraArgument>-XX:+PrintHeapAtGC</extraArgument>
+                                    <extraArgument>-XX:+PrintGCDateStamps</extraArgument>
+                                    <extraArgument>-Xloggc:./logs/gc.log</extraArgument>
+                                    <extraArgument>-XX:+PrintGCTimeStamps</extraArgument>
+                                    <extraArgument>-XX:+PrintGC</extraArgument>
                                 </extraArguments>
                             </jvmSettings>
                             <generatorConfigurations>

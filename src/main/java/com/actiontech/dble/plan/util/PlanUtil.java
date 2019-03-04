@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2016-2018 ActionTech.
+ * Copyright (C) 2016-2019 ActionTech.
  * License: http://www.gnu.org/licenses/gpl.html GPL version 2 or higher.
  */
 
@@ -62,7 +62,7 @@ public final class PlanUtil {
         // union return
         if (node.type() == PlanNodeType.MERGE)
             return null;
-        NamedField tmpField = new NamedField(column.getTableName(), column.getItemName(), null);
+        NamedField tmpField = new NamedField(column.getDbName(), column.getTableName(), column.getItemName(), null);
         NamedField coutField = node.getInnerFields().get(tmpField);
         if (coutField == null)
             return null;
@@ -319,7 +319,7 @@ public final class PlanUtil {
     // ----------------help method------------
 
     private static Item pushDownCol(PlanNode node, ItemField col) {
-        NamedField tmpField = new NamedField(col.getTableName(), col.getItemName(), null);
+        NamedField tmpField = new NamedField(col.getDbName(), col.getTableName(), col.getItemName(), null);
         NamedField coutField = node.getInnerFields().get(tmpField);
         return coutField.planNode.getOuterFields().get(coutField);
     }

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2016-2018 ActionTech.
+ * Copyright (C) 2016-2019 ActionTech.
  * based on code by MyCATCopyrightHolder Copyright (c) 2013, OpenCloudDB/MyCAT.
  * License: http://www.gnu.org/licenses/gpl.html GPL version 2 or higher.
  */
@@ -47,10 +47,7 @@ import com.actiontech.dble.statistic.stat.SqlResultSizeRecorder;
 import com.actiontech.dble.statistic.stat.ThreadWorkUsage;
 import com.actiontech.dble.statistic.stat.UserStat;
 import com.actiontech.dble.statistic.stat.UserStatAnalyzer;
-import com.actiontech.dble.util.ExecutorUtil;
-import com.actiontech.dble.util.KVPathUtil;
-import com.actiontech.dble.util.TimeUtil;
-import com.actiontech.dble.util.ZKUtils;
+import com.actiontech.dble.util.*;
 import com.google.common.io.Files;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import org.apache.curator.framework.CuratorFramework;
@@ -504,10 +501,16 @@ public final class DbleServer {
             if (dnIndexLock.acquire(30, TimeUnit.SECONDS)) {
                 try {
                     File file = new File(SystemConfig.getHomePath(), "conf" + File.separator + "dnindex.properties");
+                    byte[] data;
+                    if (!file.exists()) {
+                        data = "".getBytes();
+                    } else {
+                        data = Files.toByteArray(file);
+                    }
                     String path = KVPathUtil.getDnIndexNode();
                     CuratorFramework zk = ZKUtils.getConnection();
                     if (zk.checkExists().forPath(path) == null) {
-                        zk.create().creatingParentsIfNeeded().forPath(path, Files.toByteArray(file));
+                        zk.create().creatingParentsIfNeeded().forPath(path, data);
                     }
                 } finally {
                     dnIndexLock.release();
@@ -522,14 +525,19 @@ public final class DbleServer {
         systemVariables = sys;
     }
 
-    public void reloadMetaData(ServerConfig conf) {
+    public void reloadMetaData(ServerConfig conf, Map<String, Set<String>> specifiedSchemas) {
         this.metaChanging = true;
         try {
-            ProxyMetaManager tmpManager = tmManager;
-            ProxyMetaManager newManager = new ProxyMetaManager();
-            newManager.initMeta(conf);
-            tmManager = newManager;
-            tmpManager.terminate();
+            if (CollectionUtil.isEmpty(specifiedSchemas)) {
+                ProxyMetaManager tmpManager = tmManager;
+                ProxyMetaManager newManager = new ProxyMetaManager();
+                newManager.initMeta(conf, null);
+                tmManager = newManager;
+                tmpManager.terminate();
+            } else {
+                tmManager.initMeta(conf, specifiedSchemas);
+                tmManager.setTimestamp(System.currentTimeMillis());
+            }
         } finally {
             this.metaChanging = false;
         }

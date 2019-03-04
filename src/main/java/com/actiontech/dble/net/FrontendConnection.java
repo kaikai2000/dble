@@ -1,5 +1,5 @@
 /*
-* Copyright (C) 2016-2018 ActionTech.
+* Copyright (C) 2016-2019 ActionTech.
 * based on code by MyCATCopyrightHolder Copyright (c) 2013, OpenCloudDB/MyCAT.
 * License: http://www.gnu.org/licenses/gpl.html GPL version 2 or higher.
 */
@@ -54,6 +54,7 @@ public abstract class FrontendConnection extends AbstractConnection {
     protected boolean isAuthenticated;
     private boolean userReadOnly = true;
     private boolean sessionReadOnly = false;
+    private boolean multStatementAllow = false;
 
     public FrontendConnection(NetworkChannel channel) throws IOException {
         super(channel);
@@ -118,6 +119,13 @@ public abstract class FrontendConnection extends AbstractConnection {
         this.loadDataInfileHandler = loadDataInfileHandler;
     }
 
+    public boolean isMultStatementAllow() {
+        return multStatementAllow;
+    }
+
+    public void setMultStatementAllow(boolean multStatementAllow) {
+        this.multStatementAllow = multStatementAllow;
+    }
     public void setQueryHandler(FrontendQueryHandler queryHandler) {
         this.queryHandler = queryHandler;
     }

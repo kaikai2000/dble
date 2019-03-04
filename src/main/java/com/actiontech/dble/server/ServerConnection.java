@@ -1,5 +1,5 @@
 /*
-* Copyright (C) 2016-2018 ActionTech.
+* Copyright (C) 2016-2019 ActionTech.
 * based on code by MyCATCopyrightHolder Copyright (c) 2013, OpenCloudDB/MyCAT.
 * License: http://www.gnu.org/licenses/gpl.html GPL version 2 or higher.
 */
@@ -20,6 +20,7 @@ import com.actiontech.dble.route.util.RouterUtil;
 import com.actiontech.dble.server.handler.SetHandler;
 import com.actiontech.dble.server.parser.ServerParse;
 import com.actiontech.dble.server.response.Heartbeat;
+import com.actiontech.dble.server.response.InformationSchemaProfiling;
 import com.actiontech.dble.server.response.Ping;
 import com.actiontech.dble.server.util.SchemaUtil;
 import com.actiontech.dble.util.*;
@@ -255,6 +256,13 @@ public class ServerConnection extends FrontendConnection {
                 writeErrMessage(ErrorCode.ERR_BAD_LOGICDB, "Unknown Database '" + db + "'");
                 return;
             }
+        }
+        //fix navicat
+        // SELECT STATE AS `State`, ROUND(SUM(DURATION),7) AS `Duration`, CONCAT(ROUND(SUM(DURATION)/*100,3), '%') AS `Percentage`
+        // FROM INFORMATION_SCHEMA.PROFILING WHERE QUERY_ID= GROUP BY STATE ORDER BY SEQ
+        if (ServerParse.SELECT == type && sql.contains(" INFORMATION_SCHEMA.PROFILING ") && sql.contains("CONCAT(ROUND(SUM(DURATION)/")) {
+            InformationSchemaProfiling.response(this);
+            return;
         }
         routeEndExecuteSQL(sql, type, schemaConfig);
 
