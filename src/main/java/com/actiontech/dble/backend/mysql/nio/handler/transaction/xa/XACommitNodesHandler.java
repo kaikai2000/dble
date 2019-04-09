@@ -16,6 +16,7 @@ import com.actiontech.dble.backend.mysql.xa.CoordinatorLogEntry;
 import com.actiontech.dble.backend.mysql.xa.ParticipantLogEntry;
 import com.actiontech.dble.backend.mysql.xa.TxState;
 import com.actiontech.dble.backend.mysql.xa.XAStateLog;
+import com.actiontech.dble.btrace.provider.XaDelayProvider;
 import com.actiontech.dble.config.ErrorCode;
 import com.actiontech.dble.net.mysql.ErrorPacket;
 import com.actiontech.dble.net.mysql.OkPacket;
@@ -39,6 +40,7 @@ public class XACommitNodesHandler extends AbstractCommitNodesHandler {
     private Lock lockForErrorHandle = new ReentrantLock();
     private Condition sendFinished = lockForErrorHandle.newCondition();
     private volatile boolean sendFinishedFlag = false;
+
     public XACommitNodesHandler(NonBlockingSession session) {
         super(session);
     }
@@ -81,6 +83,7 @@ public class XACommitNodesHandler extends AbstractCommitNodesHandler {
         }
 
     }
+
     @Override
     public void clearResources() {
         tryCommitTimes = 0;
@@ -161,11 +164,15 @@ public class XACommitNodesHandler extends AbstractCommitNodesHandler {
 
     private void endPhase(MySQLConnection mysqlCon) {
         String xaTxId = mysqlCon.getConnXID(session);
+        String rrnName = ((RouteResultsetNode) mysqlCon.getAttachment()).getName();
+        XaDelayProvider.delayBeforeXaEnd(rrnName, xaTxId);
         mysqlCon.execCmd("XA END " + xaTxId);
     }
 
     private void preparePhase(MySQLConnection mysqlCon) {
         String xaTxId = mysqlCon.getConnXID(session);
+        String rrnName = ((RouteResultsetNode) mysqlCon.getAttachment()).getName();
+        XaDelayProvider.delayBeforeXaPrepare(rrnName, xaTxId);
         mysqlCon.execCmd("XA PREPARE " + xaTxId);
     }
 
@@ -180,6 +187,8 @@ public class XACommitNodesHandler extends AbstractCommitNodesHandler {
             }
         }
         String xaTxId = mysqlCon.getConnXID(session);
+        String rrnName = ((RouteResultsetNode) mysqlCon.getAttachment()).getName();
+        XaDelayProvider.delayBeforeXaCommit(rrnName, xaTxId);
         mysqlCon.execCmd("XA COMMIT " + xaTxId);
     }
 
@@ -363,19 +372,29 @@ public class XACommitNodesHandler extends AbstractCommitNodesHandler {
         } else if (session.getXaState() == TxState.TX_COMMIT_FAILED_STATE) {
             MySQLConnection errConn = session.releaseExcept(TxState.TX_COMMIT_FAILED_STATE);
             if (errConn != null) {
-                XAStateLog.saveXARecoveryLog(session.getSessionXaID(), session.getXaState());
+                final String xaId = session.getSessionXaID();
+                XAStateLog.saveXARecoveryLog(xaId, session.getXaState());
                 if (++tryCommitTimes < COMMIT_TIMES) {
                     // try commit several times
+                    LOGGER.warn("fail to COMMIT xa transaction " + xaId + " at the " + tryCommitTimes + "th time!");
                     commit();
                 } else {
                     // close this session ,add to schedule job
-                    session.getSource().close("COMMIT FAILED but it will try to COMMIT repeatedly in backend until it is success!");
+                    session.getSource().close("COMMIT FAILED but it will try to COMMIT repeatedly in background until it is success!");
+                    // kill xa or retry to commit xa in background
                     final int count = DbleServer.getInstance().getConfig().getSystem().getXaRetryCount();
                     if (!session.isRetryXa()) {
-                        session.forceClose("kill xa session by manager cmd!");
+                        String warnStr = "kill xa session by manager cmd!";
+                        LOGGER.warn(warnStr);
+                        session.forceClose(warnStr);
                     } else if (count == 0 || ++backgroundCommitTimes <= count) {
-                        AlertUtil.alertSelf(AlarmCode.XA_BACKGROUND_RETRY_FAIL, Alert.AlertLevel.WARN, "fail to try to COMMIT xa transaction " + session.getSessionXaID() + " background", AlertUtil.genSingleLabel("XA_ID", session.getSessionXaID()));
+                        String warnStr = "fail to COMMIT xa transaction " + xaId + " at the " + backgroundCommitTimes + "th time in background!" ;
+                        LOGGER.warn(warnStr);
+                        AlertUtil.alertSelf(AlarmCode.XA_BACKGROUND_RETRY_FAIL, Alert.AlertLevel.WARN, warnStr, AlertUtil.genSingleLabel("XA_ID", xaId));
+
+                        XaDelayProvider.beforeAddXaToQueue(count, xaId);
                         DbleServer.getInstance().getXaSessionCheck().addCommitSession(session);
+                        XaDelayProvider.afterAddXaToQueue(count, xaId);
                     }
                 }
             } else {
@@ -385,6 +404,8 @@ public class XACommitNodesHandler extends AbstractCommitNodesHandler {
                 byte[] toSend = sendData;
                 session.clearResources(false);
                 AlertUtil.alertSelfResolve(AlarmCode.XA_BACKGROUND_RETRY_FAIL, Alert.AlertLevel.WARN, AlertUtil.genSingleLabel("XA_ID", session.getSessionXaID()));
+                // remove session in background
+                DbleServer.getInstance().getXaSessionCheck().getCommittingSession().remove(session.getSource().getId());
                 if (!session.closed()) {
                     setResponseTime(isSuccess);
                     session.getSource().write(toSend);
@@ -429,7 +450,6 @@ public class XACommitNodesHandler extends AbstractCommitNodesHandler {
         }
 
     }
-
 
 
     private void waitUntilSendFinish() {
