@@ -535,8 +535,8 @@ public class ServerConfig {
 
             erRelations = newErMap;
         }
-        loadSequence();
-        selfChecking0();
+		// loadSequence();
+		// selfChecking0();
 
     }
 
