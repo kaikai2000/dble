@@ -24,6 +24,8 @@ import com.actiontech.dble.route.RouteResultsetNode;
 import com.actiontech.dble.server.NonBlockingSession;
 import com.actiontech.dble.util.StringUtil;
 
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
@@ -40,9 +42,11 @@ public class XACommitNodesHandler extends AbstractCommitNodesHandler {
     private Lock lockForErrorHandle = new ReentrantLock();
     private Condition sendFinished = lockForErrorHandle.newCondition();
     private volatile boolean sendFinishedFlag = false;
+    private ConcurrentMap<Object, Long> xaOldThreadIds;
 
     public XACommitNodesHandler(NonBlockingSession session) {
         super(session);
+        xaOldThreadIds = new ConcurrentHashMap<>(session.getTargetCount());
     }
 
     @Override
@@ -90,6 +94,7 @@ public class XACommitNodesHandler extends AbstractCommitNodesHandler {
         backgroundCommitTimes = 0;
         participantLogEntry = null;
         sendData = OkPacket.OK;
+        xaOldThreadIds.clear();
         if (closedConnSet != null) {
             closedConnSet.clear();
         }
@@ -157,6 +162,7 @@ public class XACommitNodesHandler extends AbstractCommitNodesHandler {
 
     private byte[] makeErrorPacket(String errMsg) {
         ErrorPacket errPacket = new ErrorPacket();
+        errPacket.setPacketId(1);
         errPacket.setErrNo(ErrorCode.ER_UNKNOWN_ERROR);
         errPacket.setMessage(StringUtil.encode(errMsg, session.getSource().getCharset().getResults()));
         return errPacket.toBytes();
@@ -180,6 +186,7 @@ public class XACommitNodesHandler extends AbstractCommitNodesHandler {
         if (session.getXaState() == TxState.TX_COMMIT_FAILED_STATE) {
             MySQLConnection newConn = session.freshConn(mysqlCon, this);
             if (!newConn.equals(mysqlCon)) {
+                xaOldThreadIds.putIfAbsent(mysqlCon.getAttachment(), mysqlCon.getThreadId());
                 mysqlCon = newConn;
             } else if (decrementCountBy(1)) {
                 cleanAndFeedback(false);
@@ -269,15 +276,32 @@ public class XACommitNodesHandler extends AbstractCommitNodesHandler {
                 }
             } else if (mysqlCon.getXaStatus() == TxState.TX_COMMIT_FAILED_STATE) {
                 if (errPacket.getErrNo() == ErrorCode.ER_XAER_NOTA) {
-                    //Unknown XID ,if xa transaction only contains select statement, xid will lost after restart server although prepared
-                    mysqlCon.setXaStatus(TxState.TX_COMMITTED_STATE);
-                    XAStateLog.saveXARecoveryLog(session.getSessionXaID(), mysqlCon);
-                    mysqlCon.setXaStatus(TxState.TX_INITIALIZE_STATE);
-                    if (decrementCountBy(1)) {
-                        if (session.getXaState() == TxState.TX_PREPARED_STATE) {
-                            session.setXaState(TxState.TX_INITIALIZE_STATE);
+                    String xid = mysqlCon.getConnXID(session);
+                    XACheckHandler handler = new XACheckHandler(xid, mysqlCon.getSchema(), mysqlCon.getPool().getDbPool().getSource());
+                    // if mysql connection holding xa transaction wasn't released, may result in ER_XAER_NOTA.
+                    // so we need check xid here
+                    handler.checkXid();
+                    if (handler.isSuccess() && !handler.isExistXid()) {
+                        // Unknown XID ,if xa transaction only contains select statement, xid will lost after restart server although prepared
+                        mysqlCon.setXaStatus(TxState.TX_COMMITTED_STATE);
+                        XAStateLog.saveXARecoveryLog(session.getSessionXaID(), mysqlCon);
+                        mysqlCon.setXaStatus(TxState.TX_INITIALIZE_STATE);
+                        if (decrementCountBy(1)) {
+                            if (session.getXaState() == TxState.TX_PREPARED_STATE) {
+                                session.setXaState(TxState.TX_INITIALIZE_STATE);
+                            }
+                            cleanAndFeedback(false);
                         }
-                        cleanAndFeedback(false);
+                    } else {
+                        if (handler.isExistXid()) {
+                            // kill mysql connection holding xa transaction, so current xa transaction can be committed next time.
+                            handler.killXaThread(xaOldThreadIds.get(mysqlCon.getAttachment()));
+                        }
+                        XAStateLog.saveXARecoveryLog(session.getSessionXaID(), mysqlCon);
+                        session.setXaState(TxState.TX_COMMIT_FAILED_STATE);
+                        if (decrementCountBy(1)) {
+                            cleanAndFeedback(false);
+                        }
                     }
                 } else {
                     mysqlCon.setXaStatus(TxState.TX_COMMIT_FAILED_STATE);
@@ -377,6 +401,7 @@ public class XACommitNodesHandler extends AbstractCommitNodesHandler {
                 if (++tryCommitTimes < COMMIT_TIMES) {
                     // try commit several times
                     LOGGER.warn("fail to COMMIT xa transaction " + xaId + " at the " + tryCommitTimes + "th time!");
+                    XaDelayProvider.beforeInnerRetry(tryCommitTimes, xaId);
                     commit();
                 } else {
                     // close this session ,add to schedule job
@@ -401,7 +426,7 @@ public class XACommitNodesHandler extends AbstractCommitNodesHandler {
                 XAStateLog.saveXARecoveryLog(session.getSessionXaID(), TxState.TX_COMMITTED_STATE);
                 session.setXaState(TxState.TX_INITIALIZE_STATE);
                 session.cancelableStatusSet(NonBlockingSession.CANCEL_STATUS_INIT);
-                byte[] toSend = sendData;
+                byte[] toSend = OkPacket.OK;
                 session.clearResources(false);
                 AlertUtil.alertSelfResolve(AlarmCode.XA_BACKGROUND_RETRY_FAIL, Alert.AlertLevel.WARN, AlertUtil.genSingleLabel("XA_ID", session.getSessionXaID()));
                 // remove session in background
@@ -450,7 +475,6 @@ public class XACommitNodesHandler extends AbstractCommitNodesHandler {
         }
 
     }
-
 
     private void waitUntilSendFinish() {
         this.lockForErrorHandle.lock();
