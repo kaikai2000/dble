@@ -42,8 +42,6 @@ import com.actiontech.dble.server.status.SlowQueryLog;
 import com.actiontech.dble.server.util.GlobalTableUtil;
 import com.actiontech.dble.server.variables.SystemVariables;
 import com.actiontech.dble.server.variables.VarsExtractorHandler;
-import com.actiontech.dble.sqlengine.OneRawSQLQueryResultHandler;
-import com.actiontech.dble.sqlengine.SQLJob;
 import com.actiontech.dble.statistic.stat.SqlResultSizeRecorder;
 import com.actiontech.dble.statistic.stat.ThreadWorkUsage;
 import com.actiontech.dble.statistic.stat.UserStat;
@@ -273,6 +271,15 @@ public final class DbleServer {
 
     public void startup() throws IOException {
         this.config = new ServerConfig();
+
+        SystemConfig system = config.getSystem();
+        if (system.getEnableAlert() == 1) {
+            AlertUtil.switchAlert(true);
+        }
+        AlertManager.getInstance().startAlert();
+
+        this.config.testConnection();
+
         /*
          * | offline | Change Server status to OFF |
          * | online | Change Server status to ON |
@@ -288,7 +295,6 @@ public final class DbleServer {
         }
         xaSessionCheck = new XASessionCheck();
 
-        SystemConfig system = config.getSystem();
 
         // server startup
         LOGGER.info("===============================================");
@@ -325,8 +331,8 @@ public final class DbleServer {
         short bufferPoolPageNumber = system.getBufferPoolPageNumber();
         //minimum allocation unit
         short bufferPoolChunkSize = system.getBufferPoolChunkSize();
-        if (bufferPoolPageSize * bufferPoolPageNumber > Platform.getMaxDirectMemory()) {
-            throw new IOException("Direct BufferPool size lager than MaxDirectMemory");
+        if ((long) bufferPoolPageSize * (long) bufferPoolPageNumber > Platform.getMaxDirectMemory()) {
+            throw new IOException("Direct BufferPool size[bufferPoolPageSize(" + bufferPoolPageSize + ")*bufferPoolPageNumber(" + bufferPoolPageNumber + ")] larger than MaxDirectMemory[" + Platform.getMaxDirectMemory() + "]");
         }
         bufferPool = new DirectByteBufferPool(bufferPoolPageSize, bufferPoolChunkSize, bufferPoolPageNumber);
 
@@ -365,10 +371,6 @@ public final class DbleServer {
         if (system.getEnableSlowLog() == 1) {
             SlowQueryLog.getInstance().setEnableSlowLog(true);
         }
-        if (system.getEnableAlert() == 1) {
-            AlertUtil.switchAlert(true);
-        }
-        AlertManager.getInstance().startAlert();
         if (aio) {
             int processorCount = frontProcessorCount + backendProcessorCount;
             LOGGER.info("using aio network handler ");
@@ -582,7 +584,7 @@ public final class DbleServer {
                         while (iterator.hasNext()) {
                             BackendConnection con = iterator.next();
                             long lastTime = con.getLastTime();
-                            if (con.isClosedOrQuit() || !con.isBorrowed() || currentTime - lastTime > sqlTimeout) {
+                            if (con.isClosed() || !con.isBorrowed() || currentTime - lastTime > sqlTimeout) {
                                 con.close("clear old backend connection ...");
                                 iterator.remove();
                             }
@@ -1009,7 +1011,6 @@ public final class DbleServer {
         } else {
             xaCmd.append("XA ROLLBACK ");
         }
-        boolean finished = true;
         for (int j = 0; j < coordinatorLogEntry.getParticipants().length; j++) {
             ParticipantLogEntry participantLogEntry = coordinatorLogEntry.getParticipants()[j];
             // XA commit
@@ -1018,26 +1019,40 @@ public final class DbleServer {
                     participantLogEntry.getTxState() != TxState.TX_PREPARE_UNCONNECT_STATE &&
                     participantLogEntry.getTxState() != TxState.TX_ROLLBACKING_STATE &&
                     participantLogEntry.getTxState() != TxState.TX_ROLLBACK_FAILED_STATE &&
+<<<<<<< HEAD
 					participantLogEntry.getTxState() != TxState.TX_PREPARED_STATE
 					&& participantLogEntry.getTxState() != TxState.TX_ENDED_STATE) {
 
+=======
+                    participantLogEntry.getTxState() != TxState.TX_ENDED_STATE &&
+                    participantLogEntry.getTxState() != TxState.TX_PREPARED_STATE &&
+                    participantLogEntry.getTxState() != TxState.TX_PREPARING_STATE) {
+>>>>>>> 3f5d1b4c758a6118a4c6ba44cc954fc02592a4c8
                 continue;
             }
-            finished = false;
             outLoop:
             for (SchemaConfig schema : DbleServer.getInstance().getConfig().getSchemas().values()) {
                 for (TableConfig table : schema.getTables().values()) {
                     for (String dataNode : table.getDataNodes()) {
                         PhysicalDBNode dn = DbleServer.getInstance().getConfig().getDataNodes().get(dataNode);
                         if (participantLogEntry.compareAddress(dn.getDbPool().getSource().getConfig().getIp(), dn.getDbPool().getSource().getConfig().getPort(), dn.getDatabase())) {
-                            OneRawSQLQueryResultHandler resultHandler = new OneRawSQLQueryResultHandler(new String[0], new XARecoverCallback(needCommit, participantLogEntry));
                             xaCmd.append(coordinatorLogEntry.getId().substring(0, coordinatorLogEntry.getId().length() - 1));
                             xaCmd.append(".");
                             xaCmd.append(dn.getDatabase());
+                            if (participantLogEntry.getExpires() != 0) {
+                                xaCmd.append(".");
+                                xaCmd.append(participantLogEntry.getExpires());
+                            }
                             xaCmd.append("'");
-                            SQLJob sqlJob = new SQLJob(xaCmd.toString(), dn.getDatabase(), resultHandler, dn.getDbPool().getSource());
-                            sqlJob.run();
-                            LOGGER.debug(String.format("[%s] Host:[%s] schema:[%s]", xaCmd, dn.getName(), dn.getDatabase()));
+                            XARecoverHandler handler = new XARecoverHandler(needCommit, participantLogEntry);
+                            handler.execute(xaCmd.toString(), dn.getDatabase(), dn.getDbPool().getSource());
+                            if (!handler.isSuccess()) {
+                                throw new RuntimeException("Fail to recover xa when dble start, please check backend mysql.");
+                            }
+
+                            if (LOGGER.isDebugEnabled()) {
+                                LOGGER.debug(String.format("[%s] Host:[%s] schema:[%s]", xaCmd, dn.getName(), dn.getDatabase()));
+                            }
 
                             //reset xaCmd
                             xaCmd.setLength(0);
@@ -1052,10 +1067,8 @@ public final class DbleServer {
                 }
             }
         }
-        if (finished) {
-            XAStateLog.saveXARecoveryLog(coordinatorLogEntry.getId(), needCommit ? TxState.TX_COMMITTED_STATE : TxState.TX_ROLLBACKED_STATE);
-            XAStateLog.writeCheckpoint(coordinatorLogEntry.getId());
-        }
+        XAStateLog.saveXARecoveryLog(coordinatorLogEntry.getId(), needCommit ? TxState.TX_COMMITTED_STATE : TxState.TX_ROLLBACKED_STATE);
+        XAStateLog.writeCheckpoint(coordinatorLogEntry.getId());
     }
 
     /**

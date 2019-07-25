@@ -381,7 +381,12 @@ public class ProxyMetaManager {
             for (Map.Entry<String, String> view : schemaName.getValue().entrySet()) {
                 ViewMeta vm = new ViewMeta(view.getValue(), schemaName.getKey(), this);
                 vm.init(true);
-                this.getCatalogs().get(schemaName.getKey()).getViewMetas().put(vm.getViewName(), vm);
+                SchemaMeta schemaMeta = this.getCatalogs().get(schemaName.getKey());
+                if (schemaMeta == null) {
+                    LOGGER.warn("View " + view.getKey() + " can not find it's schema,view " + view.getKey() + " not initialized");
+                } else {
+                    schemaMeta.getViewMetas().put(vm.getViewName(), vm);
+                }
             }
         }
     }
@@ -498,8 +503,8 @@ public class ProxyMetaManager {
             String ddlPath = ClusterPathUtil.getDDLPath(nodeName);
             DistributeLock lock = new DistributeLock(ddlPath, ddlInfo.toString());
             if (!lock.acquire()) {
-                String msg = "The syncMeta.lock or metaLock about " + nodeName + " in " + ddlPath + "is Exists";
-                LOGGER.info(msg);
+                String msg = "The metaLock about `" + nodeName + "` is exists. It means other instance is doing DDL.";
+                LOGGER.info(msg + " The path of DDL is " + ddlPath);
                 throw new Exception(msg);
             }
             ClusterDelayProvider.delayAfterDdlLockMeta();

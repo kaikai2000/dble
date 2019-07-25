@@ -185,13 +185,13 @@ public abstract class PhysicalDatasource {
         //the following is about the idle connection number control
         int idleCons = getIdleCount();
         int totalCount = this.getTotalConCount();
-        int createCount = (hostConfig.getMinCon() - idleCons) / 3;
+        int createCount = (config.getMinCon() - idleCons) / 3;
 
         // create if idle too little
         if ((createCount > 0) && totalCount < size) {
             createByIdleLittle(idleCons, createCount);
-        } else if (idleCons > hostConfig.getMinCon()) {
-            closeByIdleMany(idleCons - hostConfig.getMinCon(), idleCons);
+        } else if (idleCons > config.getMinCon()) {
+            closeByIdleMany(idleCons - config.getMinCon(), idleCons);
         }
     }
 
@@ -208,7 +208,7 @@ public abstract class PhysicalDatasource {
             BackendConnection con = linkedQueue.poll();
             if (con == null) {
                 break;
-            } else if (con.isClosedOrQuit()) {
+            } else if (con.isClosed()) {
                 continue;
             } else if (con.getLastTime() < hearBeatTime) { //if the connection is idle for a long time
                 con.setBorrowed(true);
@@ -258,7 +258,7 @@ public abstract class PhysicalDatasource {
                             labels, ToResolveContainer.CREATE_CONN_FAIL, this.getHostConfig().getName() + "-" + this.getConfig().getHostName());
                 }
             } catch (IOException e) {
-                String errMsg = "create connection err ";
+                String errMsg = "create connection err:";
                 LOGGER.warn(errMsg, e);
                 Map<String, String> labels = AlertUtil.genSingleLabel("data_host", this.getHostConfig().getName() + "-" + this.getConfig().getHostName());
                 AlertUtil.alert(AlarmCode.CREATE_CONN_FAIL, Alert.AlertLevel.WARN, errMsg + e.getMessage(), "mysql", this.getConfig().getId(), labels);
@@ -438,7 +438,7 @@ public abstract class PhysicalDatasource {
     }
 
     private void returnCon(BackendConnection c) {
-        if (c.isClosedOrQuit()) {
+        if (c.isClosed()) {
             return;
         }
         c.setAttachment(null);

@@ -70,7 +70,11 @@ public class SingleNodeHandler implements ResponseHandler, LoadDataResponseHandl
 
     public void execute() throws Exception {
         connClosed = false;
-        this.packetId = (byte) session.getPacketId().get();
+        if (rrs.isLoadData()) {
+            packetId = session.getSource().getLoadDataInfileHandler().getLastPackId();
+        } else {
+            packetId = (byte) session.getPacketId().get();
+        }
         if (session.getTargetCount() > 0) {
             BackendConnection conn = session.getTarget(node);
             if (conn == null && rrs.isGlobalTable() && rrs.getGlobalBackupNodes() != null) {
@@ -154,7 +158,7 @@ public class SingleNodeHandler implements ResponseHandler, LoadDataResponseHandl
         if (syncFinished) {
             session.releaseConnectionIfSafe(conn, false);
         } else {
-            ((MySQLConnection) conn).quit();
+            conn.closeWithoutRsp("unfinished sync");
             session.getTargetMap().remove(conn.getAttachment());
         }
         source.setTxInterrupt(errMsg);
@@ -247,7 +251,6 @@ public class SingleNodeHandler implements ResponseHandler, LoadDataResponseHandl
         if (!rrs.isCallStatement()) {
             session.releaseConnectionIfSafe(conn, false);
         }
-
 
         eof[3] = ++packetId;
         session.multiStatementPacket(eof, packetId);
